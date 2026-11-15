@@ -5,6 +5,8 @@ import { CarFront, CheckCircle2, Clock3, LogOut, MapPin, ShieldCheck, Smartphone
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RideRequestFormMap } from "@/components/RideRequestFormMap";
+import { DriverDashboard as DemoDriverDashboard } from "@/components/DriverDashboard";
+import { PassengerDashboard as DemoPassengerDashboard } from "@/components/PassengerDashboard";
 import { supabase } from "@/lib/supabase";
 
 type Role = "passenger" | "driver";
@@ -181,6 +183,6 @@ export default function Home() {
 
   if (busy) return <div className="grid min-h-screen place-items-center bg-[#f6f8f7] text-slate-600">Chargement de votre session…</div>;
   if (!session) return <main className="min-h-screen bg-[#f6f8f7] px-4 py-8 text-slate-950 sm:px-8"><div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl items-center gap-10 lg:grid-cols-[1.05fr_0.95fr]"><section className="hidden lg:block"><p className="text-sm font-semibold uppercase tracking-[0.24em] text-emerald-700">MadaMove V1</p><h1 className="mt-5 max-w-xl text-6xl font-semibold leading-[0.95] tracking-[-0.05em]">Le transport local, simplement.</h1><p className="mt-6 max-w-lg text-lg leading-8 text-slate-600">Connectez-vous pour commander un taxi, un VTC ou un taxi-moto au prix qui vous convient.</p><div className="mt-10 grid max-w-lg gap-3 sm:grid-cols-3">{[{ icon: UserRound, label: "Passager" }, { icon: CarFront, label: "Conducteur" }, { icon: ShieldCheck, label: "Sécurisé" }].map(item => { const Icon = item.icon; return <div key={item.label} className="rounded-2xl border border-slate-200 bg-white p-4"><Icon className="size-5 text-emerald-700" /><p className="mt-3 text-sm font-medium">{item.label}</p></div>; })}</div></section><AuthPanel /></div></main>;
-  if (profile?.role === "driver") return <main className="grid min-h-screen place-items-center bg-[#f6f8f7] px-4"><div className="max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm"><CarFront className="mx-auto size-10 text-emerald-700" /><h1 className="mt-5 text-2xl font-semibold">Espace conducteur</h1><p className="mt-3 text-sm leading-6 text-slate-600">Votre compte conducteur est connecté. La réception des demandes et la gestion des contre-offres seront ajoutées dans la prochaine étape.</p><Button className="mt-6 bg-emerald-700 text-white hover:bg-emerald-800" onClick={() => supabase.auth.signOut()}>Se déconnecter</Button></div></main>;
-  return <PassengerDashboard user={session.user} profile={profile} onLogout={() => supabase.auth.signOut()} />;
+  if (profile?.role === "driver") return <DemoDriverDashboard userId={session.user.id} email={session.user.email} onLogout={() => supabase.auth.signOut()} />;
+  return <DemoPassengerDashboard userId={session.user.id} email={session.user.email} profile={profile} onLogout={() => supabase.auth.signOut()} />;
 }
