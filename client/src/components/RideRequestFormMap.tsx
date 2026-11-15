@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { MapPin, Smartphone, WalletCards } from "lucide-react";
+import { LocateFixed, MapPin, Smartphone, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MapView } from "@/components/Map";
@@ -46,9 +46,44 @@ export function RideRequestFormMap({ userId, onCreated }: { userId: string; onCr
   const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState("");
+  const [locating, setLocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const renderer = useRef<google.maps.DirectionsRenderer | null>(null);
+
+  useEffect(() => {
+    if (!map || !google.maps.places) return;
+
+    const pickupInput = document.getElementById("pickup-address") as HTMLInputElement | null;
+    const destinationInput = document.getElementById("destination-address") as HTMLInputElement | null;
+    if (!pickupInput || !destinationInput) return;
+
+    const autocompleteOptions: google.maps.places.AutocompleteOptions = {
+      fields: ["formatted_address", "geometry", "name"],
+      componentRestrictions: { country: "mg" },
+    };
+    const pickupAutocomplete = new google.maps.places.Autocomplete(pickupInput, autocompleteOptions);
+    const destinationAutocomplete = new google.maps.places.Autocomplete(destinationInput, autocompleteOptions);
+    const pickupListener = pickupAutocomplete.addListener("place_changed", () => {
+      const place = pickupAutocomplete.getPlace();
+      const address = place.formatted_address || place.name;
+      if (address) setPickup(address);
+      if (place.geometry?.viewport) map.fitBounds(place.geometry.viewport);
+      else if (place.geometry?.location) { map.panTo(place.geometry.location); map.setZoom(15); }
+    });
+    const destinationListener = destinationAutocomplete.addListener("place_changed", () => {
+      const place = destinationAutocomplete.getPlace();
+      const address = place.formatted_address || place.name;
+      if (address) setDestination(address);
+      if (place.geometry?.viewport) map.fitBounds(place.geometry.viewport);
+      else if (place.geometry?.location) { map.panTo(place.geometry.location); map.setZoom(15); }
+    });
+
+    return () => {
+      pickupListener.remove();
+      destinationListener.remove();
+    };
+  }, [map]);
 
   useEffect(() => {
     if (!map) return;
@@ -139,11 +174,41 @@ export function RideRequestFormMap({ userId, onCreated }: { userId: string; onCr
     }
   }
 
+  function useCurrentPosition() {
+    if (!navigator.geolocation) {
+      setRouteError("La géolocalisation n’est pas disponible sur ce navigateur.");
+      return;
+    }
+    setLocating(true);
+    setRouteError("");
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        const location = { lat: position.coords.latitude, lng: position.coords.longitude };
+        map?.panTo(location);
+        map?.setZoom(16);
+        const geocoder = new google.maps.Geocoder();
+        geocoder.geocode({ location }, (results, status) => {
+          setLocating(false);
+          if (status === "OK" && results?.[0]) {
+            setPickup(results[0].formatted_address);
+          } else {
+            setPickup(`${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`);
+          }
+        });
+      },
+      error => {
+        setLocating(false);
+        setRouteError(error.code === error.PERMISSION_DENIED ? "Autorisez la localisation pour utiliser votre position actuelle." : "Impossible de récupérer votre position.");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+    );
+  }
+
   return (
     <form onSubmit={submit} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
       <div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">Nouvelle demande</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">Où souhaitez-vous aller ?</h2></div><div className="rounded-2xl bg-emerald-50 p-3 text-emerald-700"><MapPin className="size-5" /></div></div>
       <div className="mt-7 grid gap-3 sm:grid-cols-3">{serviceOptions.map(option => <button type="button" key={option.value} onClick={() => setServiceType(option.value)} className={`rounded-2xl border p-4 text-left transition ${serviceType === option.value ? "border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600" : "border-slate-200 hover:border-slate-300"}`}><p className="font-semibold">{option.label}</p><p className="mt-1 text-xs text-slate-500">{option.description}</p><p className="mt-3 text-xs font-medium text-emerald-700">{formatPrice(option.rate)} / km</p></button>)}</div>
-      <div className="mt-7 grid gap-4 md:grid-cols-2"><div><label className="mb-1.5 block text-sm font-medium">Point de départ</label><div className="relative"><MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-emerald-600" /><Input required value={pickup} onChange={event => setPickup(event.target.value)} placeholder="Ex. Analakely" className="pl-9" /></div></div><div><label className="mb-1.5 block text-sm font-medium">Point d’arrivée</label><div className="relative"><MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input required value={destination} onChange={event => setDestination(event.target.value)} placeholder="Ex. Aéroport d’Ivato" className="pl-9" /></div></div></div>
+      <div className="mt-7 grid gap-4 md:grid-cols-2"><div><div className="mb-1.5 flex items-center justify-between gap-2"><label className="block text-sm font-medium">Point de départ</label><button type="button" onClick={useCurrentPosition} disabled={locating} className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:text-emerald-800 disabled:opacity-50"><LocateFixed className="size-3.5" /> {locating ? "Localisation…" : "Utiliser ma position actuelle"}</button></div><div className="relative"><MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-emerald-600" /><Input id="pickup-address" required value={pickup} onChange={event => setPickup(event.target.value)} placeholder="Rechercher une adresse à Madagascar" className="pl-9" /></div><p className="mt-1 text-xs text-slate-400">Commencez à écrire pour voir les suggestions.</p></div><div><label className="mb-1.5 block text-sm font-medium">Point d’arrivée</label><div className="relative"><MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input id="destination-address" required value={destination} onChange={event => setDestination(event.target.value)} placeholder="Rechercher une adresse à Madagascar" className="pl-9" /></div><p className="mt-1 text-xs text-slate-400">Sélectionnez une suggestion pour un trajet précis.</p></div></div>
       <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200"><MapView className="h-[300px] sm:h-[360px]" initialCenter={{ lat: -18.8792, lng: 47.5079 }} initialZoom={12} onMapReady={setMap} /></div>
       <div className="mt-3 flex min-h-10 items-center justify-between gap-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm">{routeLoading ? <span className="text-slate-500">Calcul de l’itinéraire…</span> : distanceKm ? <><span className="font-medium text-slate-700">Distance : <strong className="text-emerald-700">{distanceKm.toFixed(1)} km</strong></span><span className="text-slate-500">Durée estimée : {durationMinutes} min</span></> : <span className="text-slate-500">Saisissez les deux adresses pour afficher le trajet.</span>}</div>
       {routeError && <p className="mt-3 text-sm text-red-700">{routeError}</p>}
