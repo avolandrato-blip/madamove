@@ -57,7 +57,8 @@ function AuthPanel() {
     setSubmitting(true);
     try {
       if (mode === "signup") {
-        const { data, error } = await supabase.auth.signUp({ email: form.email.trim(), password: form.password, options: { data: { role: form.role, full_name: form.fullName.trim(), phone: form.phone.trim() || null } } });
+        const emailRedirectTo = new URL(import.meta.env.BASE_URL, window.location.origin).toString();
+        const { data, error } = await supabase.auth.signUp({ email: form.email.trim(), password: form.password, options: { emailRedirectTo, data: { role: form.role, full_name: form.fullName.trim(), phone: form.phone.trim() || null } } });
         if (error) throw error;
         if (!data.session) {
           setNotice({ type: "success", text: "Compte créé. Consultez votre boîte email pour confirmer votre adresse." });
