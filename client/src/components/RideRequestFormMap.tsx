@@ -166,7 +166,7 @@ export function RideRequestFormMap({
       map,
       suppressMarkers: false,
       polylineOptions: {
-        strokeColor: "#047857",
+        strokeColor: "#D4AF37",
         strokeOpacity: 0.92,
         strokeWeight: 5,
       },
@@ -381,21 +381,21 @@ export function RideRequestFormMap({
   return (
     <form
       onSubmit={submit}
-      className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7"
+      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0B1F3A]">
             Nouvelle demande · Grand Tana
           </p>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900">
+          <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-[#0B1F3A]">
             Où souhaitez-vous aller ?
           </h2>
           <p className="mt-1 text-sm text-slate-500">
             Le prix reste négociable jusqu’à son acceptation.
           </p>
         </div>
-        <div className="rounded-2xl bg-emerald-50 p-3 text-emerald-700">
+        <div className="rounded-2xl bg-[#FFF7DF] p-3 text-[#0B1F3A]">
           <MapPinned className="size-5" />
         </div>
       </div>
@@ -407,7 +407,7 @@ export function RideRequestFormMap({
             key={option.value}
             onClick={() => setServiceType(option.value)}
             aria-pressed={serviceType === option.value}
-            className={`rounded-2xl border p-3 text-left transition ${serviceType === option.value ? "border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600" : "border-slate-200 bg-white hover:border-slate-300"}`}
+            className={`rounded-2xl border p-3 text-left transition ${serviceType === option.value ? "border-[#D4AF37] bg-[#FFF7DF] ring-1 ring-[#D4AF37]" : "border-slate-200 bg-white hover:border-slate-300"}`}
           >
             <span className="text-xl" aria-hidden="true">
               {option.symbol}
@@ -422,7 +422,7 @@ export function RideRequestFormMap({
         ))}
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+      <div className="mt-6 grid gap-4 ">
         <div>
           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
             <label
@@ -435,14 +435,14 @@ export function RideRequestFormMap({
               type="button"
               onClick={useCurrentPosition}
               disabled={locating}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 disabled:opacity-50"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-[#0B1F3A] hover:text-[#0B1F3A] disabled:opacity-50"
             >
               <LocateFixed className="size-3.5" />{" "}
               {locating ? "Localisation…" : "Ma position"}
             </button>
           </div>
           <div className="relative">
-            <MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-emerald-600" />
+            <MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#8A6A10]" />
             <Input
               id="pickup-address"
               required
@@ -458,7 +458,7 @@ export function RideRequestFormMap({
           <button
             type="button"
             onClick={() => setMapPickTarget("pickup")}
-            className="mt-1.5 text-xs font-medium text-slate-500 hover:text-emerald-700"
+            className="mt-1.5 text-xs font-medium text-slate-500 hover:text-[#0B1F3A]"
           >
             Ou choisir le départ sur la carte
           </button>
@@ -487,17 +487,17 @@ export function RideRequestFormMap({
           <button
             type="button"
             onClick={() => setMapPickTarget("destination")}
-            className="mt-1.5 text-xs font-medium text-slate-500 hover:text-emerald-700"
+            className="mt-1.5 text-xs font-medium text-slate-500 hover:text-[#0B1F3A]"
           >
             Ou choisir l’arrivée sur la carte
           </button>
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+      <div className="mt-4 rounded-2xl border border-[#E8D690] bg-[#FFF9E9] p-3">
         <label
           htmlFor="pickup-landmark"
-          className="block text-xs font-bold text-amber-900"
+          className="block text-xs font-bold text-[#0B1F3A]"
         >
           <MapPin className="mr-1 inline size-3.5" />
           Repère visible pour le chauffeur
@@ -508,9 +508,9 @@ export function RideRequestFormMap({
           onChange={event => setLandmark(event.target.value)}
           maxLength={160}
           placeholder="Ex. Devant la pharmacie, portail bleu"
-          className="mt-2 border-amber-200 bg-white text-sm"
+          className="mt-2 border-[#E8D690] bg-white text-sm"
         />
-        <p className="mt-1 text-[11px] text-amber-800">
+        <p className="mt-1 text-[11px] text-[#72550B]">
           Utile dans les quartiers sans numéro de rue ; transmis au conducteur
           avec le départ.
         </p>
@@ -522,7 +522,7 @@ export function RideRequestFormMap({
             Carte Google · Antananarivo
           </p>
           {mapPickTarget && (
-            <p className="text-xs font-semibold text-emerald-700" role="status">
+            <p className="text-xs font-semibold text-[#0B1F3A]" role="status">
               Touchez la carte pour choisir{" "}
               {mapPickTarget === "pickup" ? "le départ" : "l’arrivée"}.
             </p>
@@ -534,7 +534,7 @@ export function RideRequestFormMap({
           )}
         </div>
         <MapView
-          className="h-[250px] sm:h-[330px]"
+          className="h-[250px] "
           initialCenter={{ lat: -18.8792, lng: 47.5079 }}
           initialZoom={12}
           onMapReady={setMap}
@@ -542,7 +542,7 @@ export function RideRequestFormMap({
         />
       </div>
       {mapError && (
-        <p className="mt-2 text-xs text-amber-700">
+        <p className="mt-2 text-xs text-red-700">
           La carte ne répond pas. Vérifiez que les services Google Maps sont
           activés dans la configuration du projet.
         </p>
@@ -555,7 +555,7 @@ export function RideRequestFormMap({
           <>
             <span className="font-medium text-slate-700">
               Distance routière :{" "}
-              <strong className="text-emerald-700">
+              <strong className="text-[#0B1F3A]">
                 {distanceKm.toFixed(1)} km
               </strong>
             </span>
@@ -575,7 +575,7 @@ export function RideRequestFormMap({
         </p>
       )}
 
-      <div className="mt-5 grid gap-4 sm:grid-cols-[1.1fr_0.9fr]">
+      <div className="mt-5 grid gap-4 ">
         <div>
           <label
             htmlFor="proposed-price"
@@ -645,14 +645,14 @@ export function RideRequestFormMap({
         <p className="mb-2 text-sm font-semibold text-slate-800">
           Paiement direct au conducteur
         </p>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 ">
           <button
             type="button"
             onClick={() => setPayment("cash")}
             aria-pressed={payment === "cash"}
-            className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${payment === "cash" ? "border-emerald-600 bg-emerald-50" : "border-slate-200 bg-white"}`}
+            className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${payment === "cash" ? "border-[#D4AF37] bg-[#FFF7DF]" : "border-slate-200 bg-white"}`}
           >
-            <WalletCards className="size-5 text-emerald-700" />
+            <WalletCards className="size-5 text-[#0B1F3A]" />
             <span>
               <span className="block text-sm font-semibold">Espèces</span>
               <span className="block text-xs text-slate-500">
@@ -664,9 +664,9 @@ export function RideRequestFormMap({
             type="button"
             onClick={() => setPayment("mobile_money")}
             aria-pressed={payment === "mobile_money"}
-            className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${payment === "mobile_money" ? "border-emerald-600 bg-emerald-50" : "border-slate-200 bg-white"}`}
+            className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${payment === "mobile_money" ? "border-[#D4AF37] bg-[#FFF7DF]" : "border-slate-200 bg-white"}`}
           >
-            <Smartphone className="size-5 text-emerald-700" />
+            <Smartphone className="size-5 text-[#0B1F3A]" />
             <span>
               <span className="block text-sm font-semibold">Mobile Money</span>
               <span className="block text-xs text-slate-500">
@@ -679,13 +679,13 @@ export function RideRequestFormMap({
 
       {notice && (
         <div
-          className={`mt-4 rounded-xl px-4 py-3 text-sm ${notice.type === "success" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}
+          className={`mt-4 rounded-xl px-4 py-3 text-sm ${notice.type === "success" ? "bg-[#FFF7DF] text-[#0B1F3A]" : "bg-red-50 text-red-700"}`}
           role="status"
         >
           {notice.text}
         </div>
       )}
-      <div className="mt-5 flex flex-col items-start justify-between gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center">
+      <div className="mt-5 flex flex-col items-start justify-between gap-3 border-t border-slate-100 pt-5  ">
         <p className="max-w-md text-xs leading-5 text-slate-500">
           Le tarif indicatif suit le barème MadaMove. La négociation reste
           ouverte jusqu’à l’accord du passager et du conducteur.
@@ -693,7 +693,7 @@ export function RideRequestFormMap({
         <Button
           type="submit"
           disabled={submitting || routeLoading}
-          className="h-11 w-full shrink-0 bg-emerald-700 text-white hover:bg-emerald-800 sm:w-auto"
+          className="h-11 w-full shrink-0 bg-[#D4AF37] font-bold text-[#0B1F3A] hover:bg-[#C5A02E]"
         >
           {submitting ? "Publication…" : "Lancer la demande"}
         </Button>

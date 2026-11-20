@@ -149,7 +149,7 @@ export function MapView({
           aria-live="polite"
         >
           <div className="max-w-sm">
-            <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-white text-emerald-700 shadow-sm">
+            <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-white text-[#0B1F3A] shadow-sm">
               <MapPinned className="size-6" />
             </div>
             <p className="mt-3 text-sm font-semibold text-slate-800">
