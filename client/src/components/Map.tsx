@@ -11,6 +11,7 @@ interface MapViewProps {
   initialCenter?: MapPosition;
   initialZoom?: number;
   pickupPosition?: MapPosition | null;
+  viaPosition?: MapPosition | null;
   destinationPosition?: MapPosition | null;
   routeCoordinates?: MapPosition[];
 }
@@ -30,25 +31,32 @@ const destinationIcon = L.divIcon({
   iconSize: [18, 18],
   iconAnchor: [9, 9],
 });
+const viaIcon = L.divIcon({
+  className: "madamove-map-marker",
+  html: '<span style="display:block;width:18px;height:18px;border:4px solid white;border-radius:50%;background:#d97706;box-shadow:0 1px 6px #0006"></span>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+});
 
 function FitMapToRoute({
   pickupPosition,
+  viaPosition,
   destinationPosition,
   routeCoordinates,
-}: Pick<MapViewProps, "pickupPosition" | "destinationPosition" | "routeCoordinates">) {
+}: Pick<MapViewProps, "pickupPosition" | "viaPosition" | "destinationPosition" | "routeCoordinates">) {
   const map = useMap();
 
   useEffect(() => {
     const coordinates = routeCoordinates?.length
       ? routeCoordinates
-      : [pickupPosition, destinationPosition].filter((point): point is MapPosition => Boolean(point));
+      : [pickupPosition, viaPosition, destinationPosition].filter((point): point is MapPosition => Boolean(point));
 
     if (coordinates.length > 1) {
       map.fitBounds(L.latLngBounds(coordinates), { padding: [28, 28], maxZoom: 15 });
     } else if (coordinates.length === 1) {
       map.setView(coordinates[0], 15);
     }
-  }, [map, pickupPosition, destinationPosition, routeCoordinates]);
+  }, [map, pickupPosition, viaPosition, destinationPosition, routeCoordinates]);
 
   return null;
 }
@@ -58,6 +66,7 @@ export function MapView({
   initialCenter = defaultCenter,
   initialZoom = 12,
   pickupPosition = null,
+  viaPosition = null,
   destinationPosition = null,
   routeCoordinates = emptyCoordinates,
 }: MapViewProps) {
@@ -74,12 +83,18 @@ export function MapView({
       />
       <FitMapToRoute
         pickupPosition={pickupPosition}
+        viaPosition={viaPosition}
         destinationPosition={destinationPosition}
         routeCoordinates={routeCoordinates}
       />
       {pickupPosition && (
         <Marker position={pickupPosition} icon={pickupIcon}>
           <Popup>Point de départ</Popup>
+        </Marker>
+      )}
+      {viaPosition && (
+        <Marker position={viaPosition} icon={viaIcon}>
+          <Popup>Étape intermédiaire</Popup>
         </Marker>
       )}
       {destinationPosition && (

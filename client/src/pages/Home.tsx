@@ -10,9 +10,9 @@ import { PassengerDashboard } from "@/components/PassengerDashboard";
 import { supabase } from "@/lib/supabase";
 
 type Role = "passenger" | "driver";
-type Profile = { role: Role; full_name: string; phone: string | null };
-type AuthForm = { fullName: string; phone: string; email: string; password: string; role: Role };
-const emptyAuthForm: AuthForm = { fullName: "", phone: "", email: "", password: "", role: "passenger" };
+type Profile = { role: Role; first_name: string; last_name: string; full_name: string; address: string; phone: string | null };
+type AuthForm = { firstName: string; lastName: string; address: string; phone: string; email: string; password: string; role: Role };
+const emptyAuthForm: AuthForm = { firstName: "", lastName: "", address: "", phone: "", email: "", password: "", role: "passenger" };
 
 function AuthPanel({ initialMode, isRideRequest, onClose }: { initialMode: "login" | "signup"; isRideRequest: boolean; onClose: () => void }) {
   const [mode, setMode] = useState<"login" | "signup">(initialMode);
@@ -28,16 +28,23 @@ function AuthPanel({ initialMode, isRideRequest, onClose }: { initialMode: "logi
     setSubmitting(true);
     try {
       if (mode === "signup") {
+        if (isRideRequest && form.role !== "passenger") {
+          throw new Error("Pour envoyer cette demande, choisissez un compte passager.");
+        }
         const emailRedirectTo = new URL(import.meta.env.BASE_URL, window.location.origin).toString();
+        const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`;
         const { data, error } = await supabase.auth.signUp({
           email: form.email.trim(),
           password: form.password,
           options: {
             emailRedirectTo,
             data: {
-              role: isRideRequest ? "passenger" : form.role,
-              full_name: form.fullName.trim(),
-              phone: form.phone.trim() || null,
+              role: form.role,
+              first_name: form.firstName.trim(),
+              last_name: form.lastName.trim(),
+              full_name: fullName,
+              address: form.address.trim(),
+              phone: form.phone.trim(),
             },
           },
         });
@@ -68,9 +75,11 @@ function AuthPanel({ initialMode, isRideRequest, onClose }: { initialMode: "logi
         <div className="mt-7"><h2 className="text-2xl font-semibold">{mode === "login" ? "Bienvenue" : "Rejoindre MadaMove"}</h2><p className="mt-2 text-sm text-slate-500">{isRideRequest ? "Connectez-vous ou créez un compte pour envoyer votre demande." : mode === "login" ? "Connectez-vous pour retrouver votre espace MadaMove." : "Créez un compte passager ou conducteur."}</p></div>
         <form onSubmit={submit} className="mt-7 space-y-4">
           {mode === "signup" && <>
-            <div><label className="mb-1.5 block text-sm font-medium">Nom complet</label><Input required value={form.fullName} onChange={event => update("fullName", event.target.value)} placeholder="Ex. Rado Andriamihaja" /></div>
-            <div><label className="mb-1.5 block text-sm font-medium">Téléphone <span className="font-normal text-slate-400">(optionnel)</span></label><Input value={form.phone} onChange={event => update("phone", event.target.value)} placeholder="03X XX XXX XX" /></div>
-            {!isRideRequest && <div><label className="mb-2 block text-sm font-medium">Je suis</label><div className="grid grid-cols-2 gap-2">{(["passenger", "driver"] as Role[]).map(role => <button type="button" key={role} onClick={() => setForm(current => ({ ...current, role }))} className={`rounded-xl border px-3 py-3 text-left text-sm ${form.role === role ? "border-emerald-600 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-600"}`}><span className="font-medium">{role === "driver" ? "Conducteur" : "Passager"}</span><span className="mt-1 block text-xs text-slate-500">{role === "driver" ? "Je propose des courses" : "Je cherche une course"}</span></button>)}</div></div>}
+            <div><label className="mb-1.5 block text-sm font-medium">Prénom</label><Input required autoComplete="given-name" value={form.firstName} onChange={event => update("firstName", event.target.value)} placeholder="Ex. Rado" /></div>
+            <div><label className="mb-1.5 block text-sm font-medium">Nom</label><Input required autoComplete="family-name" value={form.lastName} onChange={event => update("lastName", event.target.value)} placeholder="Ex. Andriamihaja" /></div>
+            <div><label className="mb-1.5 block text-sm font-medium">Adresse</label><Input required autoComplete="street-address" value={form.address} onChange={event => update("address", event.target.value)} placeholder="Adresse ou quartier" /></div>
+            <div><label className="mb-1.5 block text-sm font-medium">Téléphone</label><Input required type="tel" autoComplete="tel" value={form.phone} onChange={event => update("phone", event.target.value)} placeholder="03X XX XXX XX" /></div>
+            <div><label className="mb-2 block text-sm font-medium">Je suis</label><div className="grid grid-cols-2 gap-2">{(["passenger", "driver"] as Role[]).map(role => <button type="button" key={role} onClick={() => setForm(current => ({ ...current, role }))} className={`rounded-xl border px-3 py-3 text-left text-sm ${form.role === role ? "border-emerald-600 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-600"}`}><span className="font-medium">{role === "driver" ? "Conducteur" : "Passager"}</span><span className="mt-1 block text-xs text-slate-500">{role === "driver" ? "Je propose des courses" : "Je cherche une course"}</span></button>)}</div>{isRideRequest && <p className="mt-2 text-xs text-slate-500">Une demande de trajet nécessite un compte passager.</p>}</div>
           </>}
           <div><label className="mb-1.5 block text-sm font-medium">Adresse email</label><Input required type="email" value={form.email} onChange={event => update("email", event.target.value)} placeholder="vous@exemple.com" /></div>
           <div><label className="mb-1.5 block text-sm font-medium">Mot de passe</label><Input required minLength={6} type="password" value={form.password} onChange={event => update("password", event.target.value)} placeholder="6 caractères minimum" /></div>
@@ -117,7 +126,7 @@ export default function Home() {
   useEffect(() => {
     let mounted = true;
     async function loadProfile(user: User) {
-      const { data } = await supabase.from("profiles").select("role, full_name, phone").eq("id", user.id).maybeSingle();
+      const { data } = await supabase.from("profiles").select("role, first_name, last_name, full_name, address, phone").eq("id", user.id).maybeSingle();
       if (mounted) setProfile(data as Profile | null);
     }
     supabase.auth.getSession().then(async ({ data }) => { if (!mounted) return; setSession(data.session); if (data.session?.user) await loadProfile(data.session.user); setBusy(false); });
@@ -127,8 +136,8 @@ export default function Home() {
 
   if (busy) return <div className="grid min-h-screen place-items-center bg-[#f6f8f7] text-slate-600">Chargement de votre session…</div>;
   if (session && !requestInProgress) {
-    if (profile?.role === "driver") return <DriverDashboard userId={session.user.id} email={session.user.email} onLogout={() => supabase.auth.signOut()} />;
-    return <PassengerDashboard userId={session.user.id} email={session.user.email} profile={profile} onLogout={() => supabase.auth.signOut()} />;
+    if (profile?.role === "driver") return <DriverDashboard userId={session.user.id} email={session.user.email} profile={profile} onProfileUpdated={setProfile} onLogout={() => supabase.auth.signOut()} />;
+    return <PassengerDashboard userId={session.user.id} email={session.user.email} profile={profile} onProfileUpdated={setProfile} onLogout={() => supabase.auth.signOut()} />;
   }
 
   return <>

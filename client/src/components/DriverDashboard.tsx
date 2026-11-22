@@ -1,43 +1,59 @@
 import { useEffect, useState } from "react";
-import { CarFront, CheckCircle2, Clock3, LogOut, MapPin, Radio, Send, ToggleLeft, ToggleRight } from "lucide-react";
+import { CarFront, CheckCircle2, Clock3, LogOut, MapPin, Navigation, Radio, Send, ToggleLeft, ToggleRight, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CallRideContactButton } from "@/components/CallRideContactButton";
+import { ProfileSettingsDialog, type ProfileDetails } from "@/components/ProfileSettingsDialog";
 import { supabase } from "@/lib/supabase";
 
-type ServiceType = "taxi" | "vtc" | "moto";
-type Ride = { id: string; service_type: ServiceType; pickup_address: string; destination_address: string; proposed_price: number; passenger_count: number; luggage_count: number; distance_km: number | null; estimated_duration_minutes: number | null; status: string; created_at: string };
-type DriverDashboardProps = { userId: string; email?: string; onLogout: () => void };
+type ServiceType = "car" | "moto" | "taxi" | "vtc";
+type Ride = { id: string; service_type: ServiceType; pickup_address: string; via_address?: string | null; destination_address: string; proposed_price: number; final_price?: number | null; passenger_count: number; luggage_count: number; distance_km: number | null; estimated_duration_minutes: number | null; status: string; created_at: string };
+type DriverDashboardProps = { userId: string; email?: string; profile: ProfileDetails | null; onProfileUpdated: (profile: ProfileDetails) => void; onLogout: () => void };
 
-const serviceLabels: Record<ServiceType, string> = { taxi: "Voiture", vtc: "Voiture", moto: "Moto" };
+const serviceLabels: Record<ServiceType, string> = { car: "Voiture", taxi: "Voiture", vtc: "Voiture", moto: "Moto" };
 const formatPrice = (value: number) => `${new Intl.NumberFormat("fr-FR").format(value)} Ar`;
 
-export function DriverDashboard({ userId, email, onLogout }: DriverDashboardProps) {
+function navigationUrl(ride: Ride) {
+  const url = new URL("https://www.google.com/maps/dir/");
+  url.searchParams.set("api", "1");
+  url.searchParams.set("origin", ride.pickup_address);
+  url.searchParams.set("destination", ride.destination_address);
+  url.searchParams.set("travelmode", "driving");
+  url.searchParams.set("dir_action", "navigate");
+  if (ride.via_address) url.searchParams.set("waypoints", ride.via_address);
+  return url.toString();
+}
+
+export function DriverDashboard({ userId, email, profile, onProfileUpdated, onLogout }: DriverDashboardProps) {
   const [available, setAvailable] = useState(false);
   const [rides, setRides] = useState<Ride[]>([]);
+  const [assignedRides, setAssignedRides] = useState<Ride[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [updatingAvailability, setUpdatingAvailability] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   async function loadDashboard() {
-    const { data: profile } = await supabase.from("driver_profiles").select("is_available").eq("id", userId).maybeSingle();
-    setAvailable(Boolean(profile?.is_available));
-    if (profile?.is_available) {
-      const { data } = await supabase.from("ride_requests").select("*").eq("status", "pending").order("created_at", { ascending: false });
-      const nextRides = (data as Ride[]) ?? [];
-      setRides(nextRides);
-      setDrafts(current => Object.fromEntries(nextRides.map(ride => [ride.id, current[ride.id] ?? String(ride.proposed_price)])));
-    } else {
-      setRides([]);
-    }
+    const { data: driverProfile } = await supabase.from("driver_profiles").select("is_available").eq("id", userId).maybeSingle();
+    const isAvailable = Boolean(driverProfile?.is_available);
+    setAvailable(isAvailable);
+    const [pendingResult, assignedResult] = await Promise.all([
+      isAvailable ? supabase.from("ride_requests").select("*").eq("status", "pending").order("created_at", { ascending: false }) : Promise.resolve({ data: [] as Ride[] }),
+      supabase.from("ride_requests").select("*").eq("selected_driver_id", userId).in("status", ["accepted", "in_progress"]).order("created_at", { ascending: false }),
+    ]);
+    const nextRides = (pendingResult.data as Ride[]) ?? [];
+    setRides(nextRides);
+    setAssignedRides((assignedResult.data as Ride[]) ?? []);
+    setDrafts(current => Object.fromEntries(nextRides.map(ride => [ride.id, current[ride.id] ?? String(ride.proposed_price)])));
     setLoading(false);
   }
 
   useEffect(() => {
-    loadDashboard();
+    void loadDashboard();
     const channel = supabase.channel(`driver-dashboard-${userId}`).on("postgres_changes", { event: "*", schema: "public", table: "ride_requests" }, loadDashboard).subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { void supabase.removeChannel(channel); };
   }, [userId]);
 
   async function toggleAvailability() {
@@ -60,9 +76,18 @@ export function DriverDashboard({ userId, email, onLogout }: DriverDashboardProp
     setSending(null);
   }
 
-  return <main className="min-h-screen bg-[#f6f8f7] px-4 py-8 text-slate-950 sm:px-8"><div className="mx-auto max-w-6xl"><header className="flex flex-col justify-between gap-5 border-b border-slate-200 pb-6 sm:flex-row sm:items-center"><div><p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">MadaMove V1</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">Espace conducteur</h1><p className="mt-2 text-sm text-slate-500">{email}</p></div><Button variant="outline" onClick={onLogout} className="gap-2 self-start"><LogOut className="size-4" /> Se déconnecter</Button></header>
+  return <main className="min-h-screen bg-[#f6f8f7] px-4 py-8 text-slate-950 sm:px-8"><div className="mx-auto max-w-6xl">
+    <header className="flex flex-col justify-between gap-5 border-b border-slate-200 pb-6 sm:flex-row sm:items-center"><div><p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">MadaMove</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">Espace conducteur</h1><p className="mt-2 text-sm text-slate-500">{email}</p></div><div className="flex flex-wrap gap-2 self-start"><Button variant="outline" onClick={() => setProfileOpen(true)} className="gap-2"><UserRound className="size-4" /> Mon profil</Button><Button variant="outline" onClick={onLogout} className="gap-2"><LogOut className="size-4" /> Se déconnecter</Button></div></header>
     <section className="mt-8 rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8"><div className="flex flex-col justify-between gap-6 md:flex-row md:items-center"><div><div className="flex items-center gap-3"><CarFront className="size-6 text-emerald-300" /><p className="font-semibold">Réception des demandes</p></div><p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">Activez votre disponibilité pour recevoir les demandes en voiture ou à moto proches de votre zone.</p></div><button type="button" onClick={toggleAvailability} disabled={updatingAvailability} className={`flex items-center gap-3 rounded-2xl px-5 py-4 text-left transition ${available ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-white hover:bg-white/15"}`}>{available ? <ToggleRight className="size-7" /> : <ToggleLeft className="size-7 text-slate-400" />}<span><span className="block text-sm font-semibold">{available ? "Disponible" : "Indisponible"}</span><span className="block text-xs opacity-70">{available ? "Vous recevez les demandes" : "Activer pour commencer"}</span></span></button></div></section>
-    {notice && <div className={`mt-5 rounded-2xl px-4 py-3 text-sm ${notice.type === "success" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>{notice.text}</div>}
-    <section className="mt-8"><div className="flex items-end justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Demandes disponibles</p><h2 className="mt-2 text-2xl font-semibold">Répondez aux passagers</h2></div><span className="rounded-full bg-white px-3 py-1.5 text-sm text-slate-500 shadow-sm">{rides.length} demande{rides.length > 1 ? "s" : ""}</span></div>{!available ? <div className="mt-5 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><Radio className="mx-auto size-8 text-slate-300" /><p className="mt-4 font-medium">Vous êtes indisponible</p><p className="mt-2 text-sm text-slate-500">Activez le bouton ci-dessus pour afficher les demandes.</p></div> : loading ? <p className="mt-5 text-sm text-slate-500">Chargement des demandes…</p> : rides.length === 0 ? <div className="mt-5 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><CheckCircle2 className="mx-auto size-8 text-emerald-600" /><p className="mt-4 font-medium">Aucune demande pour le moment</p><p className="mt-2 text-sm text-slate-500">Gardez votre disponibilité activée, les nouvelles demandes apparaîtront automatiquement.</p></div> : <div className="mt-5 grid gap-5 lg:grid-cols-2">{rides.map(ride => <article key={ride.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between gap-3"><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">{serviceLabels[ride.service_type]}</span><span className="text-xs text-slate-400">{ride.distance_km ? `${Number(ride.distance_km).toFixed(1)} km` : "Distance à confirmer"}</span></div><div className="mt-5 space-y-3"><div className="flex gap-3"><MapPin className="mt-0.5 size-4 shrink-0 text-emerald-600" /><div><p className="text-xs text-slate-400">Départ</p><p className="text-sm font-medium">{ride.pickup_address}</p></div></div><div className="ml-2 h-3 border-l border-dashed border-slate-300" /><div className="flex gap-3"><MapPin className="mt-0.5 size-4 shrink-0 text-slate-400" /><div><p className="text-xs text-slate-400">Arrivée</p><p className="text-sm font-medium">{ride.destination_address}</p></div></div></div><div className="mt-5 grid grid-cols-3 gap-2 rounded-2xl bg-slate-50 p-3 text-center text-xs"><span><strong className="block text-sm text-slate-900">{ride.passenger_count}</strong>passager{ride.passenger_count > 1 ? "s" : ""}</span><span><strong className="block text-sm text-slate-900">{ride.luggage_count}</strong>bagage{ride.luggage_count > 1 ? "s" : ""}</span><span><strong className="block text-sm text-emerald-700">{formatPrice(ride.proposed_price)}</strong>prix proposé</span></div><div className="mt-5 flex items-end gap-3"><div className="flex-1"><label className="mb-1.5 block text-xs font-medium text-slate-500">Votre prix</label><div className="relative"><Input type="number" min={1} value={drafts[ride.id] ?? ride.proposed_price} onChange={event => setDrafts(current => ({ ...current, [ride.id]: event.target.value }))} className="pr-12" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">Ar</span></div></div><Button type="button" disabled={sending === ride.id} onClick={() => sendOffer(ride)} className="h-9 gap-2 bg-emerald-700 text-white hover:bg-emerald-800"><Send className="size-3.5" />{sending === ride.id ? "…" : Number(drafts[ride.id]) === ride.proposed_price ? "Accepter" : "Contre-offre"}</Button></div><div className="mt-4 flex items-center gap-2 text-xs text-slate-400"><Clock3 className="size-3.5" /> {ride.estimated_duration_minutes ? `${ride.estimated_duration_minutes} min estimées` : "Nouvelle demande"}</div></article>)}</div>}</section>
+    {notice && <div role="status" className={`mt-5 rounded-2xl px-4 py-3 text-sm ${notice.type === "success" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>{notice.text}</div>}
+
+    <section className="mt-8"><div className="flex items-end justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Courses attribuées</p><h2 className="mt-2 text-2xl font-semibold">Vos passagers</h2></div><span className="rounded-full bg-white px-3 py-1.5 text-sm text-slate-500 shadow-sm">{assignedRides.length} course{assignedRides.length > 1 ? "s" : ""}</span></div>
+      {loading ? <p className="mt-5 text-sm text-slate-500">Chargement…</p> : assignedRides.length === 0 ? <p className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500">Aucune course attribuée pour le moment.</p> : <div className="mt-5 grid gap-5 lg:grid-cols-2">{assignedRides.map(ride => <article key={ride.id} className="rounded-3xl border border-emerald-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between gap-3"><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">{serviceLabels[ride.service_type]}</span><span className="text-xs font-medium text-emerald-700">{ride.status === "in_progress" ? "En cours" : "Confirmée"}</span></div><div className="mt-5 space-y-3"><div className="flex gap-3"><MapPin className="mt-0.5 size-4 shrink-0 text-emerald-600" /><div><p className="text-xs text-slate-400">Départ</p><p className="text-sm font-medium">{ride.pickup_address}</p></div></div>{ride.via_address && <div className="ml-2 h-3 border-l border-dashed border-amber-500" />} {ride.via_address && <div className="flex gap-3"><MapPin className="mt-0.5 size-4 shrink-0 text-amber-600" /><div><p className="text-xs text-slate-400">Étape</p><p className="text-sm font-medium">{ride.via_address}</p></div></div>}<div className="ml-2 h-3 border-l border-dashed border-slate-300" /><div className="flex gap-3"><MapPin className="mt-0.5 size-4 shrink-0 text-slate-400" /><div><p className="text-xs text-slate-400">Arrivée</p><p className="text-sm font-medium">{ride.destination_address}</p></div></div></div><div className="mt-5 flex flex-wrap items-center gap-3"><CallRideContactButton rideId={ride.id} label="Appeler le passager" /><a href={navigationUrl(ride)} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-medium text-white hover:bg-emerald-800"><Navigation className="size-4" /> Ouvrir la navigation</a></div><div className="mt-4 flex items-center gap-2 text-xs text-slate-400"><Clock3 className="size-3.5" /> {ride.estimated_duration_minutes ? `${ride.estimated_duration_minutes} min estimées` : "Durée à confirmer"} · {formatPrice(ride.final_price ?? ride.proposed_price)}</div><p className="mt-2 text-xs text-slate-400">Google Maps peut recalculer une variante à partir des points du trajet.</p></article>)}</div>}
+    </section>
+
+    <section className="mt-10"><div className="flex items-end justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Demandes disponibles</p><h2 className="mt-2 text-2xl font-semibold">Répondez aux passagers</h2></div><span className="rounded-full bg-white px-3 py-1.5 text-sm text-slate-500 shadow-sm">{rides.length} demande{rides.length > 1 ? "s" : ""}</span></div>
+      {!available ? <div className="mt-5 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><Radio className="mx-auto size-8 text-slate-300" /><p className="mt-4 font-medium">Vous êtes indisponible</p><p className="mt-2 text-sm text-slate-500">Activez le bouton ci-dessus pour afficher les demandes.</p></div> : loading ? <p className="mt-5 text-sm text-slate-500">Chargement des demandes…</p> : rides.length === 0 ? <div className="mt-5 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><CheckCircle2 className="mx-auto size-8 text-emerald-600" /><p className="mt-4 font-medium">Aucune demande pour le moment</p><p className="mt-2 text-sm text-slate-500">Gardez votre disponibilité activée, les nouvelles demandes apparaîtront automatiquement.</p></div> : <div className="mt-5 grid gap-5 lg:grid-cols-2">{rides.map(ride => <article key={ride.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between gap-3"><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">{serviceLabels[ride.service_type]}</span><span className="text-xs text-slate-400">{ride.distance_km ? `${Number(ride.distance_km).toFixed(1)} km` : "Distance à confirmer"}</span></div><div className="mt-5 space-y-3"><div className="flex gap-3"><MapPin className="mt-0.5 size-4 shrink-0 text-emerald-600" /><div><p className="text-xs text-slate-400">Départ</p><p className="text-sm font-medium">{ride.pickup_address}</p></div></div>{ride.via_address && <><div className="ml-2 h-3 border-l border-dashed border-amber-500" /><div className="flex gap-3"><MapPin className="mt-0.5 size-4 shrink-0 text-amber-600" /><div><p className="text-xs text-slate-400">Étape</p><p className="text-sm font-medium">{ride.via_address}</p></div></div></>}<div className="ml-2 h-3 border-l border-dashed border-slate-300" /><div className="flex gap-3"><MapPin className="mt-0.5 size-4 shrink-0 text-slate-400" /><div><p className="text-xs text-slate-400">Arrivée</p><p className="text-sm font-medium">{ride.destination_address}</p></div></div></div><div className="mt-5 grid grid-cols-3 gap-2 rounded-2xl bg-slate-50 p-3 text-center text-xs"><span><strong className="block text-sm text-slate-900">{ride.passenger_count}</strong>passager{ride.passenger_count > 1 ? "s" : ""}</span><span><strong className="block text-sm text-slate-900">{ride.luggage_count}</strong>bagage{ride.luggage_count > 1 ? "s" : ""}</span><span><strong className="block text-sm text-emerald-700">{formatPrice(ride.proposed_price)}</strong>prix proposé</span></div><div className="mt-5 flex items-end gap-3"><div className="flex-1"><label htmlFor={`offer-${ride.id}`} className="mb-1.5 block text-xs font-medium text-slate-500">Votre prix</label><div className="relative"><Input id={`offer-${ride.id}`} type="number" min={1} value={drafts[ride.id] ?? ride.proposed_price} onChange={event => setDrafts(current => ({ ...current, [ride.id]: event.target.value }))} className="pr-12" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">Ar</span></div></div><Button type="button" disabled={sending === ride.id} onClick={() => sendOffer(ride)} className="h-9 gap-2 bg-emerald-700 text-white hover:bg-emerald-800"><Send className="size-3.5" />{sending === ride.id ? "…" : Number(drafts[ride.id]) === ride.proposed_price ? "Accepter" : "Contre-offre"}</Button></div><div className="mt-4 flex items-center gap-2 text-xs text-slate-400"><Clock3 className="size-3.5" /> {ride.estimated_duration_minutes ? `${ride.estimated_duration_minutes} min estimées` : "Nouvelle demande"}</div></article>)}</div>}
+    </section>
+    {profileOpen && <ProfileSettingsDialog userId={userId} profile={profile} onClose={() => setProfileOpen(false)} onSaved={onProfileUpdated} />}
   </div></main>;
 }

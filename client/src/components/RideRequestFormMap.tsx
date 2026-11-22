@@ -12,6 +12,7 @@ type RideRequest = {
   id: string;
   service_type: ServiceType;
   pickup_address: string;
+  via_address?: string | null;
   destination_address: string;
   proposed_price: number;
   payment_method: PaymentMethod;
@@ -46,7 +47,8 @@ type OsrmResponse = {
     geometry: { coordinates: [number, number][] };
   }>;
 };
-type SearchField = "pickup" | "destination";
+type RouteOption = { id: string; distanceKm: number; durationMinutes: number; coordinates: MapPosition[] };
+type SearchField = "pickup" | "via" | "destination";
 
 const serviceOptions = [
   { value: "car", label: "Voiture", description: "Pour vos trajets en voiture", rate: 2500, minimumFare: 10000, icon: CarFront },
@@ -73,16 +75,17 @@ function formatFeatureAddress(feature: PhotonFeature) {
 export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {} }: { userId: string | null; onCreated: (ride: RideRequest) => void; onRequireAuth?: () => void }) {
   const [serviceType, setServiceType] = useState<ServiceType>("car");
   const [pickup, setPickup] = useState("");
+  const [via, setVia] = useState("");
   const [destination, setDestination] = useState("");
   const [pickupPosition, setPickupPosition] = useState<MapPosition | null>(null);
+  const [viaPosition, setViaPosition] = useState<MapPosition | null>(null);
   const [destinationPosition, setDestinationPosition] = useState<MapPosition | null>(null);
   const [price, setPrice] = useState("");
   const [payment, setPayment] = useState<PaymentMethod>("cash");
   const [passengers, setPassengers] = useState("1");
   const [luggage, setLuggage] = useState("0");
-  const [distanceKm, setDistanceKm] = useState<number | null>(null);
-  const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
-  const [routeCoordinates, setRouteCoordinates] = useState<MapPosition[]>([]);
+  const [routes, setRoutes] = useState<RouteOption[]>([]);
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState("");
   const [locating, setLocating] = useState(false);
@@ -94,7 +97,11 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
   const [suggestionsError, setSuggestionsError] = useState("");
   const pendingSubmission = useRef(false);
   const lastRouteRequestAt = useRef(0);
-  const activeQuery = searchField === "pickup" ? pickup : searchField === "destination" ? destination : "";
+  const activeQuery = searchField === "pickup" ? pickup : searchField === "via" ? via : searchField === "destination" ? destination : "";
+  const selectedRoute = routes[selectedRouteIndex] ?? null;
+  const distanceKm = selectedRoute?.distanceKm ?? null;
+  const durationMinutes = selectedRoute?.durationMinutes ?? null;
+  const routeCoordinates = selectedRoute?.coordinates ?? [];
 
   useEffect(() => {
     if (!searchField || activeQuery.trim().length < 3) {
@@ -138,11 +145,17 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
   }, [activeQuery, searchField]);
 
   useEffect(() => {
-    if (!pickupPosition || !destinationPosition) {
-      setDistanceKm(null);
-      setDurationMinutes(null);
+    if (via.trim() && !viaPosition) {
+      setRoutes([]);
       setPrice("");
-      setRouteCoordinates([]);
+      setRouteLoading(false);
+      setRouteError("Choisissez une suggestion pour l’étape intermédiaire ou effacez ce champ.");
+      return;
+    }
+    if (!pickupPosition || !destinationPosition) {
+      setRoutes([]);
+      setSelectedRouteIndex(0);
+      setPrice("");
       setRouteLoading(false);
       return;
     }
@@ -151,10 +164,9 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
     const timeout = window.setTimeout(async () => {
       setRouteLoading(true);
       setRouteError("");
-      setDistanceKm(null);
-      setDurationMinutes(null);
+      setRoutes([]);
+      setSelectedRouteIndex(0);
       setPrice("");
-      setRouteCoordinates([]);
 
       const waitMs = Math.max(0, 1000 - (Date.now() - lastRouteRequestAt.current));
       if (waitMs > 0) await new Promise(resolve => window.setTimeout(resolve, waitMs));
@@ -162,17 +174,21 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
       lastRouteRequestAt.current = Date.now();
 
       try {
-        const coordinates = `${pickupPosition[1]},${pickupPosition[0]};${destinationPosition[1]},${destinationPosition[0]}`;
-        const params = new URLSearchParams({ overview: "full", geometries: "geojson", steps: "false" });
+        const points = [pickupPosition, ...(viaPosition ? [viaPosition] : []), destinationPosition];
+        const coordinates = points.map(([latitude, longitude]) => `${longitude},${latitude}`).join(";");
+        const params = new URLSearchParams({ alternatives: "3", overview: "full", geometries: "geojson", steps: "false" });
         const response = await fetch(`${routingBaseUrl}/route/v1/driving/${coordinates}?${params}`, { signal: controller.signal });
         if (!response.ok) throw new Error("Le service d’itinéraire est temporairement indisponible.");
         const result = await response.json() as OsrmResponse;
-        const route = result.code === "Ok" ? result.routes?.[0] : undefined;
-        if (!route) throw new Error("Aucun itinéraire routier trouvé entre ces deux points.");
-
-        setDistanceKm(route.distance / 1000);
-        setDurationMinutes(Math.max(1, Math.round(route.duration / 60)));
-        setRouteCoordinates(route.geometry.coordinates.map(([longitude, latitude]) => [latitude, longitude] as MapPosition));
+        const availableRoutes = result.code === "Ok" ? result.routes?.slice(0, 3) : undefined;
+        if (!availableRoutes?.length) throw new Error("Aucun itinéraire routier trouvé entre ces deux points.");
+        setRoutes(availableRoutes.map((route, index) => ({
+          id: `route-${index + 1}`,
+          distanceKm: route.distance / 1000,
+          durationMinutes: Math.max(1, Math.round(route.duration / 60)),
+          coordinates: route.geometry.coordinates.map(([longitude, latitude]) => [latitude, longitude] as MapPosition),
+        })));
+        setSelectedRouteIndex(0);
       } catch (error) {
         if (!controller.signal.aborted) {
           setRouteError(error instanceof Error ? error.message : "Impossible de calculer cet itinéraire.");
@@ -186,7 +202,7 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [pickupPosition, destinationPosition]);
+  }, [pickupPosition, via, viaPosition, destinationPosition]);
 
   useEffect(() => {
     if (distanceKm === null) {
@@ -205,6 +221,9 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
     if (field === "pickup") {
       setPickup(address);
       setPickupPosition(position);
+    } else if (field === "via") {
+      setVia(address);
+      setViaPosition(position);
     } else {
       setDestination(address);
       setDestinationPosition(position);
@@ -217,7 +236,7 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
 
   function renderSuggestions(field: SearchField) {
     if (searchField !== field || activeQuery.trim().length < 3) return null;
-    const listId = field === "pickup" ? "pickup-address-suggestions" : "destination-address-suggestions";
+    const listId = `${field}-address-suggestions`;
     return (
       <div id={listId} role="listbox" className="absolute inset-x-0 top-full z-[1000] mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
         {suggestionsLoading && <p className="px-3 py-2 text-sm text-slate-500">Recherche d’adresses…</p>}
@@ -245,6 +264,10 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
   }
 
   const publishRequest = useCallback(async () => {
+    if (via.trim() && !viaPosition) {
+      setNotice({ type: "error", text: "Choisissez une suggestion pour l’étape intermédiaire ou effacez ce champ." });
+      return;
+    }
     if (!distanceKm || !price) {
       setNotice({ type: "error", text: "Choisissez deux adresses dans les suggestions pour calculer l’itinéraire." });
       return;
@@ -262,8 +285,9 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
     try {
       const payload = {
         passenger_id: userId,
-        service_type: serviceType === "car" ? "taxi" : "moto",
+        service_type: serviceType,
         pickup_address: pickup.trim(),
+        via_address: viaPosition ? via.trim() : null,
         destination_address: destination.trim(),
         proposed_price: Number(price),
         payment_method: payment,
@@ -271,25 +295,32 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
         luggage_count: Number(luggage),
         distance_km: Number(distanceKm.toFixed(2)),
         estimated_duration_minutes: durationMinutes,
+        pickup_latitude: pickupPosition?.[0] ?? null,
+        pickup_longitude: pickupPosition?.[1] ?? null,
+        via_latitude: viaPosition?.[0] ?? null,
+        via_longitude: viaPosition?.[1] ?? null,
+        destination_latitude: destinationPosition?.[0] ?? null,
+        destination_longitude: destinationPosition?.[1] ?? null,
       };
       const { data, error } = await supabase.from("ride_requests").insert(payload).select("*").single();
       if (error) throw error;
       onCreated(data as RideRequest);
       setNotice({ type: "success", text: "Demande publiée. Les conducteurs disponibles peuvent maintenant répondre." });
       setPickup("");
+      setVia("");
       setDestination("");
       setPickupPosition(null);
+      setViaPosition(null);
       setDestinationPosition(null);
-      setDistanceKm(null);
-      setDurationMinutes(null);
-      setRouteCoordinates([]);
+      setRoutes([]);
+      setSelectedRouteIndex(0);
       setPrice("");
     } catch (error) {
       setNotice({ type: "error", text: error instanceof Error ? error.message : "Impossible de publier la demande." });
     } finally {
       setSubmitting(false);
     }
-  }, [distanceKm, destination, durationMinutes, luggage, onCreated, onRequireAuth, passengers, payment, pickup, price, serviceType, userId]);
+  }, [distanceKm, destination, destinationPosition, durationMinutes, luggage, onCreated, onRequireAuth, passengers, payment, pickup, pickupPosition, price, serviceType, userId, via, viaPosition]);
 
   useEffect(() => {
     if (userId && pendingSubmission.current) void publishRequest();
@@ -398,6 +429,28 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
         </div>
 
         <div>
+          <label htmlFor="via-address" className="mb-1.5 block text-sm font-medium">Étape intermédiaire <span className="font-normal text-slate-400">(facultative)</span></label>
+          <div className="relative">
+            <MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-amber-600" />
+            <Input
+              id="via-address"
+              autoComplete="off"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={searchField === "via" && via.trim().length >= 3}
+              aria-controls="via-address-suggestions"
+              value={via}
+              onFocus={() => setSearchField("via")}
+              onChange={event => { setVia(event.target.value); setViaPosition(null); setRouteError(""); }}
+              placeholder="Ajouter un arrêt en chemin"
+              className="pl-9"
+            />
+            {renderSuggestions("via")}
+          </div>
+          <p className="mt-1 text-xs text-slate-400">Saisissez au moins 3 caractères et choisissez une suggestion.</p>
+        </div>
+
+        <div>
           <label htmlFor="destination-address" className="mb-1.5 block text-sm font-medium">Point d’arrivée</label>
           <div className="relative">
             <MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
@@ -427,6 +480,7 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
           initialCenter={[-18.8792, 47.5079]}
           initialZoom={12}
           pickupPosition={pickupPosition}
+          viaPosition={viaPosition}
           destinationPosition={destinationPosition}
           routeCoordinates={routeCoordinates}
         />
@@ -439,6 +493,22 @@ export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {}
         </> : <span className="text-slate-500">Choisissez les deux adresses pour afficher le trajet.</span>}
       </div>
       {routeError && <p className="mt-3 text-sm text-red-700">{routeError}</p>}
+      {routes.length > 0 && <div className="mt-5">
+        <p className="mb-2 text-sm font-medium">Choisissez votre itinéraire <span className="font-normal text-slate-400">({routes.length} proposition{routes.length > 1 ? "s" : ""})</span></p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {routes.map((route, index) => <button
+            key={route.id}
+            type="button"
+            aria-pressed={selectedRouteIndex === index}
+            onClick={() => setSelectedRouteIndex(index)}
+            className={`rounded-xl border p-3 text-left transition ${selectedRouteIndex === index ? "border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600" : "border-slate-200 hover:border-emerald-300"}`}
+          >
+            <span className="block text-sm font-semibold">Itinéraire {index + 1}</span>
+            <span className="mt-1 block text-xs text-slate-500">{route.distanceKm.toFixed(1)} km · {route.durationMinutes} min</span>
+          </button>)}
+        </div>
+        {routes.length === 1 && <p className="mt-2 text-xs text-slate-400">Le service de cartographie ne propose qu’une variante pour ce trajet.</p>}
+      </div>}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <div>
