@@ -30,9 +30,9 @@ type AuthForm = { fullName: string; phone: string; email: string; password: stri
 const emptyAuthForm: AuthForm = { fullName: "", phone: "", email: "", password: "", role: "passenger" };
 
 const serviceOptions: Array<{ value: ServiceType; label: string; description: string; price: string }> = [
-  { value: "taxi", label: "Taxi", description: "Course urbaine", price: "2 500 Ar/km" },
-  { value: "vtc", label: "VTC", description: "Véhicule réservé", price: "2 500 Ar/km" },
-  { value: "moto", label: "Taxi-moto", description: "Rapide et léger", price: "1 500 Ar/km" },
+  { value: "taxi", label: "Taxi", description: "Course urbaine", price: "Tarif calculé selon le trajet" },
+  { value: "vtc", label: "VTC", description: "Véhicule réservé", price: "Tarif calculé selon le trajet" },
+  { value: "moto", label: "Moto", description: "Rapide et léger", price: "Tarif calculé selon le trajet" },
 ];
 
 function formatPrice(value: number) {

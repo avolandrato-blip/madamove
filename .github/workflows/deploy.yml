@@ -42,6 +42,9 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_OSM_TILE_URL: ${{ vars.VITE_OSM_TILE_URL }}
+          VITE_PHOTON_API_BASE_URL: ${{ vars.VITE_PHOTON_API_BASE_URL }}
+          VITE_OSRM_ROUTING_BASE_URL: ${{ vars.VITE_OSRM_ROUTING_BASE_URL }}
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

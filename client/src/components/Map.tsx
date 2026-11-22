@@ -1,102 +1,95 @@
-/// <reference types="@types/google.maps" />
-
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import L, { type LatLngTuple } from "leaflet";
+import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 import { cn } from "@/lib/utils";
 
-declare global {
-  interface Window {
-    google?: typeof google;
-  }
-}
-
-let mapsScriptPromise: Promise<void> | null = null;
-
-function loadMapScript() {
-  if (window.google?.maps) return Promise.resolve();
-  if (mapsScriptPromise) return mapsScriptPromise;
-
-  const config = window.__MANUS_CONFIG__;
-  if (!config?.apiUrl || !config.apiBrowserKey) {
-    return Promise.reject(new Error("Maps is not configured"));
-  }
-
-  const apiKey = encodeURIComponent(config.apiBrowserKey);
-  const mapsProxyUrl = `${config.apiUrl.replace(/\/$/, "")}/v1/maps/proxy`;
-  mapsScriptPromise = new Promise<void>((resolve, reject) => {
-    const existingScript = document.querySelector<HTMLScriptElement>("script[data-madamove-maps]");
-    if (existingScript) {
-      existingScript.addEventListener("load", () => resolve(), { once: true });
-      existingScript.addEventListener("error", () => reject(new Error("Failed to load Google Maps")), { once: true });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.dataset.madamoveMaps = "true";
-    script.src = `${mapsProxyUrl}/maps/api/js?key=${apiKey}&v=weekly&libraries=marker,places,geocoding,geometry`;
-    script.async = true;
-    script.crossOrigin = "anonymous";
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Google Maps"));
-    document.head.appendChild(script);
-  }).catch(error => {
-    mapsScriptPromise = null;
-    throw error;
-  });
-
-  return mapsScriptPromise;
-}
+export type MapPosition = LatLngTuple;
 
 interface MapViewProps {
   className?: string;
-  initialCenter?: google.maps.LatLngLiteral;
+  initialCenter?: MapPosition;
   initialZoom?: number;
-  onMapReady?: (map: google.maps.Map) => void;
+  pickupPosition?: MapPosition | null;
+  destinationPosition?: MapPosition | null;
+  routeCoordinates?: MapPosition[];
+}
+
+const defaultCenter: MapPosition = [-18.8792, 47.5079];
+const emptyCoordinates: MapPosition[] = [];
+const tileUrl = import.meta.env.VITE_OSM_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const pickupIcon = L.divIcon({
+  className: "madamove-map-marker",
+  html: '<span style="display:block;width:18px;height:18px;border:4px solid white;border-radius:50%;background:#047857;box-shadow:0 1px 6px #0006"></span>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+});
+const destinationIcon = L.divIcon({
+  className: "madamove-map-marker",
+  html: '<span style="display:block;width:18px;height:18px;border:4px solid white;border-radius:50%;background:#e11d48;box-shadow:0 1px 6px #0006"></span>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+});
+
+function FitMapToRoute({
+  pickupPosition,
+  destinationPosition,
+  routeCoordinates,
+}: Pick<MapViewProps, "pickupPosition" | "destinationPosition" | "routeCoordinates">) {
+  const map = useMap();
+
+  useEffect(() => {
+    const coordinates = routeCoordinates?.length
+      ? routeCoordinates
+      : [pickupPosition, destinationPosition].filter((point): point is MapPosition => Boolean(point));
+
+    if (coordinates.length > 1) {
+      map.fitBounds(L.latLngBounds(coordinates), { padding: [28, 28], maxZoom: 15 });
+    } else if (coordinates.length === 1) {
+      map.setView(coordinates[0], 15);
+    }
+  }, [map, pickupPosition, destinationPosition, routeCoordinates]);
+
+  return null;
 }
 
 export function MapView({
   className,
-  initialCenter = { lat: -18.8792, lng: 47.5079 },
+  initialCenter = defaultCenter,
   initialZoom = 12,
-  onMapReady,
+  pickupPosition = null,
+  destinationPosition = null,
+  routeCoordinates = emptyCoordinates,
 }: MapViewProps) {
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<google.maps.Map | null>(null);
-  const onMapReadyRef = useRef(onMapReady);
-  onMapReadyRef.current = onMapReady;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function initialize() {
-      try {
-        await loadMapScript();
-        if (cancelled || !mapContainer.current || !window.google?.maps) return;
-
-        const nextMap = new window.google.maps.Map(mapContainer.current, {
-          zoom: initialZoom,
-          center: initialCenter,
-          mapTypeControl: true,
-          fullscreenControl: true,
-          zoomControl: true,
-          streetViewControl: true,
-          mapId: "DEMO_MAP_ID",
-        });
-
-        if (cancelled) return;
-        map.current = nextMap;
-        onMapReadyRef.current?.(nextMap);
-      } catch (error) {
-        if (!cancelled) console.error("[Maps] Unable to initialize map:", error);
-      }
-    }
-
-    initialize();
-
-    return () => {
-      cancelled = true;
-      map.current = null;
-    };
-  }, [initialCenter.lat, initialCenter.lng, initialZoom]);
-
-  return <div ref={mapContainer} className={cn("h-[500px] w-full", className)} />;
+  return (
+    <MapContainer
+      center={initialCenter}
+      zoom={initialZoom}
+      className={cn("h-[500px] w-full", className)}
+      scrollWheelZoom
+    >
+      <TileLayer
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Search: <a href="https://github.com/komoot/photon">Photon</a> | Routes: <a href="https://project-osrm.org/">OSRM</a>'
+        url={tileUrl}
+      />
+      <FitMapToRoute
+        pickupPosition={pickupPosition}
+        destinationPosition={destinationPosition}
+        routeCoordinates={routeCoordinates}
+      />
+      {pickupPosition && (
+        <Marker position={pickupPosition} icon={pickupIcon}>
+          <Popup>Point de départ</Popup>
+        </Marker>
+      )}
+      {destinationPosition && (
+        <Marker position={destinationPosition} icon={destinationIcon}>
+          <Popup>Point d’arrivée</Popup>
+        </Marker>
+      )}
+      {routeCoordinates.length > 0 && (
+        <Polyline positions={routeCoordinates} pathOptions={{ color: "#047857", weight: 5, opacity: 0.9 }} />
+      )}
+    </MapContainer>
+  );
 }
