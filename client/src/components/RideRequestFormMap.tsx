@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Bike, CarFront, CarTaxiFront, Check, LocateFixed, MapPin, Smartphone, WalletCards } from "lucide-react";
+import { Bike, CarFront, Check, LocateFixed, MapPin, Smartphone, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MapView, type MapPosition } from "@/components/Map";
 import { supabase } from "@/lib/supabase";
 
-type ServiceType = "taxi" | "vtc" | "moto";
+type ServiceType = "car" | "moto";
 type PaymentMethod = "cash" | "mobile_money";
 type RideRequest = {
   id: string;
@@ -49,12 +49,10 @@ type OsrmResponse = {
 type SearchField = "pickup" | "destination";
 
 const serviceOptions = [
-  { value: "taxi", label: "Taxi", description: "Course en taxi", rate: 2500, icon: CarTaxiFront },
-  { value: "vtc", label: "VTC", description: "Véhicule avec réservation", rate: 2500, icon: CarFront },
-  { value: "moto", label: "Moto", description: "Course rapide à moto", rate: 1500, icon: Bike },
+  { value: "car", label: "Voiture", description: "Pour vos trajets en voiture", rate: 2500, minimumFare: 10000, icon: CarFront },
+  { value: "moto", label: "Moto", description: "Une solution rapide pour circuler", rate: 1500, minimumFare: 6000, icon: Bike },
 ] as const;
 const fareStepAr = 500;
-const minimumFareAr = 2500;
 const photonBaseUrl = (import.meta.env.VITE_PHOTON_API_BASE_URL || "https://photon.komoot.io").replace(/\/$/, "");
 const routingBaseUrl = (import.meta.env.VITE_OSRM_ROUTING_BASE_URL || "https://routing.openstreetmap.de/routed-car").replace(/\/$/, "");
 
@@ -72,8 +70,8 @@ function formatFeatureAddress(feature: PhotonFeature) {
   }).join(", ");
 }
 
-export function RideRequestFormMap({ userId, onCreated }: { userId: string; onCreated: (ride: RideRequest) => void }) {
-  const [serviceType, setServiceType] = useState<ServiceType>("taxi");
+export function RideRequestFormMap({ userId, onCreated, onRequireAuth = () => {} }: { userId: string | null; onCreated: (ride: RideRequest) => void; onRequireAuth?: () => void }) {
+  const [serviceType, setServiceType] = useState<ServiceType>("car");
   const [pickup, setPickup] = useState("");
   const [destination, setDestination] = useState("");
   const [pickupPosition, setPickupPosition] = useState<MapPosition | null>(null);
@@ -94,6 +92,7 @@ export function RideRequestFormMap({ userId, onCreated }: { userId: string; onCr
   const [suggestions, setSuggestions] = useState<PhotonFeature[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [suggestionsError, setSuggestionsError] = useState("");
+  const pendingSubmission = useRef(false);
   const lastRouteRequestAt = useRef(0);
   const activeQuery = searchField === "pickup" ? pickup : searchField === "destination" ? destination : "";
 
@@ -194,9 +193,9 @@ export function RideRequestFormMap({ userId, onCreated }: { userId: string; onCr
       setPrice("");
       return;
     }
-    const rate = serviceOptions.find(option => option.value === serviceType)?.rate ?? 2500;
-    const roundedBase = Math.max(minimumFareAr, Math.round((distanceKm * rate) / fareStepAr) * fareStepAr);
-    setPrice(String(roundedBase + (serviceType === "vtc" ? 500 : 0)));
+    const option = serviceOptions.find(candidate => candidate.value === serviceType) ?? serviceOptions[0];
+    const roundedBase = Math.max(option.minimumFare, Math.round((distanceKm * option.rate) / fareStepAr) * fareStepAr);
+    setPrice(String(roundedBase));
   }, [distanceKm, serviceType]);
 
   function chooseSuggestion(field: SearchField, feature: PhotonFeature) {
@@ -245,19 +244,25 @@ export function RideRequestFormMap({ userId, onCreated }: { userId: string; onCr
     );
   }
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setNotice(null);
+  const publishRequest = useCallback(async () => {
     if (!distanceKm || !price) {
       setNotice({ type: "error", text: "Choisissez deux adresses dans les suggestions pour calculer l’itinéraire." });
       return;
     }
 
+    if (!userId) {
+      pendingSubmission.current = true;
+      onRequireAuth();
+      return;
+    }
+
+    pendingSubmission.current = false;
+    setNotice(null);
     setSubmitting(true);
     try {
       const payload = {
         passenger_id: userId,
-        service_type: serviceType,
+        service_type: serviceType === "car" ? "taxi" : "moto",
         pickup_address: pickup.trim(),
         destination_address: destination.trim(),
         proposed_price: Number(price),
@@ -284,6 +289,15 @@ export function RideRequestFormMap({ userId, onCreated }: { userId: string; onCr
     } finally {
       setSubmitting(false);
     }
+  }, [distanceKm, destination, durationMinutes, luggage, onCreated, onRequireAuth, passengers, payment, pickup, price, serviceType, userId]);
+
+  useEffect(() => {
+    if (userId && pendingSubmission.current) void publishRequest();
+  }, [publishRequest, userId]);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    void publishRequest();
   }
 
   function useCurrentPosition() {
@@ -331,7 +345,7 @@ export function RideRequestFormMap({ userId, onCreated }: { userId: string; onCr
         <div className="rounded-2xl bg-emerald-50 p-3 text-emerald-700"><MapPin className="size-5" /></div>
       </div>
 
-      <div className="mt-7 grid gap-3 sm:grid-cols-3" role="group" aria-label="Choisissez un moyen de transport">
+      <div className="mt-7 grid gap-3 sm:grid-cols-2" role="group" aria-label="Choisissez un moyen de transport">
         {serviceOptions.map(option => {
           const Icon = option.icon;
           const selected = serviceType === option.value;
@@ -461,9 +475,9 @@ export function RideRequestFormMap({ userId, onCreated }: { userId: string; onCr
 
       {notice && <div className={`mt-5 rounded-xl px-4 py-3 text-sm ${notice.type === "success" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>{notice.text}</div>}
       <div className="mt-7 flex flex-col items-start justify-between gap-4 border-t border-slate-100 pt-6 sm:flex-row sm:items-center">
-        <p className="text-xs leading-5 text-slate-500">Le tarif est calculé automatiquement à partir de la distance routière. Le VTC inclut un supplément fixe de 500 Ar par rapport au Taxi.</p>
+        <p className="text-xs leading-5 text-slate-500">Le tarif est calculé automatiquement à partir de la distance routière et du moyen de transport choisi.</p>
         <Button type="submit" disabled={submitting || routeLoading || !distanceKm} className="h-11 w-full shrink-0 bg-emerald-700 text-white hover:bg-emerald-800 sm:w-auto">
-          {submitting ? "Publication…" : "Publier la demande"}
+          {submitting ? "Envoi…" : "Valider ma demande"}
         </Button>
       </div>
     </form>
